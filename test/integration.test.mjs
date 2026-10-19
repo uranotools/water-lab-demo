@@ -1,0 +1,36 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { resolve, join } from 'node:path';
+import { pathToFileURL, fileURLToPath } from 'node:url';
+import { createApp } from '../src/server.mjs';
+const pluginRoot=process.env.WATER_LAB_PLUGIN || fileURLToPath(new URL('../../../UranoDesktop-plugins/water-lab/',import.meta.url));
+test('plugin real autentica y consulta la API real de evidencia mediante sus herramientas', {skip: !existsSync(resolve(pluginRoot,'Plugins/Channel/ChannelPlugin.ts'))}, async t=>{
+  const {ChannelPlugin}=await import(pathToFileURL(resolve(pluginRoot,'Plugins/Channel/ChannelPlugin.ts')));
+  const {WaterPlugin}=await import(pathToFileURL(resolve(pluginRoot,'Plugins/Water/WaterPlugin.ts')));
+  const dir=mkdtempSync(join(tmpdir(),'water-integration-'));
+  const token='a'.repeat(64), labToken='b'.repeat(64), channel=new ChannelPlugin({INCOMING_WEBHOOK_SECRET:token});
+  let tools;
+  const app=createApp({dataDir:dir,labToken,uranoToken:token,fetchImpl:async(url,opts)=>{
+    const req={body:JSON.parse(opts.body),headers:opts.headers};
+    assert.equal(await channel.executeAction('validateWebhook',{req}),true);
+    const parsed=await channel.executeAction('parseWebhook',{req}); assert.match(parsed.text,/WATER_LAB_RUN=/);
+    const data=await tools.executeAction('get_evidence',{runId:req.body.runId,_turnId:'test-turn'});
+    assert.equal(data.truth,undefined); assert.equal(data.scenario,undefined);
+    const comparison=await tools.executeAction('compare_detectors',{runId:req.body.runId});
+    assert.equal(comparison.detectors[0].totalLostLiters,undefined);
+    const estimate=await tools.executeAction('simulate_repair',{runId:req.body.runId,repairAfterMinutes:60}); assert.ok(estimate.assumption);
+    const formatted=await channel.executeAction('formatWebhookResponse',{agentResponse:'Fixture de integración sin LLM',turnId:'test-turn',sessionId:'test-session'});
+    return Response.json(formatted.body,{headers:{'x-urano-turn-id':'test-turn','x-urano-session-id':'test-session'}});
+  }});
+  await new Promise(r=>app.server.listen(0,'127.0.0.1',r));
+  t.after(async()=>{app.server.closeAllConnections();await new Promise(r=>app.server.close(r));rmSync(dir,{recursive:true,force:true});});
+  const url=`http://127.0.0.1:${app.server.address().port}`;
+  tools=new WaterPlugin({LAB_BASE_URL:url,LAB_API_TOKEN:labToken});
+  const post=(path,b)=>fetch(url+path,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(b)});
+  const run=await(await post('/api/runs',{scenario:'slow-leak',seed:42})).json();
+  const j=await(await post('/api/jobs',{runId:run.id,transport:'wait'})).json();
+  for(let i=0;i<100&&app.store.get('job',j.id).state!=='succeeded';i++)await new Promise(r=>setTimeout(r,10));
+  const done=app.store.get('job',j.id); assert.equal(done.state,'succeeded'); assert.equal(done.response.response,'Fixture de integración sin LLM');
+});

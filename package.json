@@ -1,0 +1,6 @@
+{
+  "name": "water-lab", "version": "0.1.0", "private": true, "type": "module",
+  "description": "Laboratorio local reproducible de consumo de agua + agente Urano",
+  "engines": { "node": ">=24" },
+  "scripts": { "setup": "node scripts/setup.mjs", "start": "node src/server.mjs", "test": "node --test test/*.test.mjs" }
+}

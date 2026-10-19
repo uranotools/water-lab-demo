@@ -1,0 +1,15 @@
+import {partialSummary} from './report.js';
+const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const diagnoses={normal:'Sin señal de fuga',possible_leak:'Posible fuga',sensor_fault:'Revisar sensor',usage_change:'Cambio de consumo',insufficient_data:'Evidencia insuficiente'};
+const level={low:'Baja',medium:'Media',high:'Alta'};
+export function renderReportHTML(job,run){
+  const r=job.report;
+  if(!r){
+    const summary=partialSummary(job.liveText);
+    if(job.state!=='succeeded'&&(summary||job.liveText?.includes('"schemaVersion"')))return `<div class="report-draft"><span class="eyebrow">RESUMEN EN VIVO · BORRADOR</span><p>${esc(summary||'El agente está organizando el informe…')}</p><small>Las secciones se publican al validar el JSON final.</small></div>`;
+    if(job.state==='succeeded')return `<div class="report-invalid"><strong>El agente no entregó un informe JSON válido</strong><p>${esc(job.reportError||'Contrato no reconocido')}</p><p>Inicia una nueva investigación con el plugin actualizado.</p></div><details><summary>Ver respuesta original</summary><pre>${esc(typeof job.response==='string'?job.response:JSON.stringify(job.response,null,2))}</pre></details>`;
+    return null;
+  }
+  const bullets=(title,items)=>items.length?`<section class="report-section"><h4>${title}</h4><ul>${items.map(s=>`<li>${esc(s)}</li>`).join('')}</ul></section>`:'';
+  return `<article class="water-report"><div class="report-top"><div><span class="eyebrow">DIAGNÓSTICO PROVISIONAL</span><h3>${esc(diagnoses[r.diagnosis])}</h3></div><span class="report-severity ${r.severity}">Prioridad ${esc(level[r.severity].toLowerCase())}</span></div><p class="report-summary">${esc(r.summary)}</p><p class="report-confidence">Confianza cualitativa del modelo: ${esc(level[r.confidence])}. No es una probabilidad calibrada.</p>${r.findings.length?`<section class="report-section"><h4>Evidencia observada</h4>${r.findings.map((f,i)=>`<div class="report-finding"><span>${String(i+1).padStart(2,'0')}</span><div><p>${esc(f.statement)}</p><div class="sample-refs">${f.sampleIndices.map(index=>{const s=run?.observation.samples[index];return `<span>M${index} · ${esc(s?.timestamp?.slice(11,16))} UTC · ${s?.flowLpm==null?'sin lectura':esc(s.flowLpm)+' L/min'}</span>`;}).join('')}</div></div></div>`).join('')}</section>`:''}<div class="report-columns">${bullets('Lo que falta comprobar',r.uncertainties)}${bullets('Siguientes pruebas',r.nextChecks)}</div>${r.recommendations.length?`<section class="report-section"><h4>Acciones recomendadas</h4><ol class="report-actions">${r.recommendations.map(a=>`<li><div><span class="report-priority">${esc(level[a.priority])}</span><strong>${esc(a.action)}</strong></div><p>${esc(a.reason)}</p></li>`).join('')}</ol></section>`:''}<details class="report-trace"><summary>Trazabilidad y JSON original</summary><p>Referencias y estructura verificadas por la demo. Las conclusiones siguen siendo interpretaciones del modelo.</p><code>${esc(r.runId)}<br>${esc(r.evidenceId)}</code><pre>${esc(JSON.stringify(r,null,2))}</pre></details></article>`;
+}

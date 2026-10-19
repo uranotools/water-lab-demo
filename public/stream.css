@@ -1,0 +1,1 @@
+.live-status{min-height:17px;font:10px/1.7 var(--mono);color:var(--muted);margin:0 0 15px}.live-status.is-live{color:var(--forest)}.live-status.is-live:before{content:"";display:inline-block;width:6px;height:6px;background:var(--forest);border-radius:50%;margin-right:7px}.agent-response.is-streaming:after{content:"▍";color:var(--forest);margin-left:2px}
